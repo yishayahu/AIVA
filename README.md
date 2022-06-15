@@ -4,7 +4,7 @@ Pytorch implementation of our method AIVA (Submitted to MICCAI workshop).
 
 ## model scheme
 
-![Alt text](images/schemeModel.png?raw=true "Title")
+![model scheme](images/schemeModel.png?raw=true "Title")
 
 ## Installation
 
