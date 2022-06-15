@@ -2,10 +2,6 @@
 
 Pytorch implementation of our method AIVA (Submitted to MICCAI workshop).
 
-## model scheme
-
-![model scheme](images/schemeModel.png?raw=true "Title")
-
 ## Installation
 
 * Install PyTorch from http://pytorch.org
