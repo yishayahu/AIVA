@@ -66,6 +66,7 @@ def get_arguments():
 
 args = get_arguments()
 if args.msm:
+    args.source = args.target
     if args.mode == 'clustering_finetune':
         config = MsmConfigFinetuneClustering()
     elif args.mode == 'pretrain':
