@@ -49,5 +49,3 @@ python3 trainer.py --source {source} --target {target} --mode clustering_finetun
 ```
 python3 trainer.py  --target {target} --mode clustering_finetune --gpu {device} --msm
 ```
-
-the results will be visible at https://wandb.ai/
