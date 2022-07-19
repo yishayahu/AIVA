@@ -556,14 +556,14 @@ def main():
         print('training on cpu')
         args.gpu = 'cpu'
         config.parallel_model = False
-        torch.cuda.manual_seed_all(RANDOM_SEED)
+        torch.cuda.manual_seed_all(args.random_seed)
 
     model.to(args.gpu)
     if config.parallel_model:
         model = torch.nn.DataParallel(model, device_ids=[0, 1, 2, 3])
-    random.seed(RANDOM_SEED)
-    np.random.seed(RANDOM_SEED)
-    torch.manual_seed(RANDOM_SEED)
+    random.seed(args.random_seed)
+    np.random.seed(args.random_seed)
+    torch.manual_seed(args.random_seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     if config.msm:
