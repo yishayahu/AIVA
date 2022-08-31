@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torchvision.transforms.functional as TF
-from spottunet import paths
+import paths
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
