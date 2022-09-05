@@ -166,7 +166,7 @@ def train_pretrain(model, optimizer, scheduler, trainloader):
         model.train()
         loss_seg_value = 0
         optimizer.zero_grad()
-        adjust_learning_rate(optimizer, i_iter)
+        adjust_learning_rate(optimizer, i_iter, config)
 
         # train with source
         try:
@@ -243,7 +243,7 @@ def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val
     optimizer.zero_grad()
     for i_iter in tqdm(range(config.num_steps)):
         if config.use_adjust_lr:
-            adjust_learning_rate(optimizer, i_iter)
+            adjust_learning_rate(optimizer, i_iter, config)
         if i_iter == 0:
             if config.parallel_model:
                 model.module.get_bottleneck = False
@@ -550,7 +550,6 @@ def main():
         shutil.rmtree(config.exp_dir)
     config.exp_dir.mkdir(parents=True, exist_ok=True)
     json.dump(dataclasses.asdict(config), open(config.exp_dir / 'config.json', 'w'))
-    shutil.copytree('.', config.exp_dir / 'code', ignore=include_patterns('*.py'))
     model.train()
     if not torch.cuda.is_available():
         print('training on cpu')

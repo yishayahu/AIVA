@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn import BatchNorm2d
 
-global config
+
 global args
 
 
@@ -17,7 +17,7 @@ def lr_poly(base_lr, iter, max_iter, power):
     return base_lr * ((1 - float(iter) / max_iter) ** (power))
 
 
-def adjust_learning_rate(optimizer, i_iter):
+def adjust_learning_rate(optimizer, i_iter, config):
     lr = lr_poly(config.lr, i_iter, config.num_steps, args.power)
     optimizer.param_groups[0]['lr'] = lr
     if len(optimizer.param_groups) > 1:

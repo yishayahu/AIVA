@@ -4,11 +4,13 @@ Pytorch implementation of our method AIVA (Submitted to MICCAI workshop).
 
 ## Installation
 
-* Install PyTorch from http://pytorch.org
 * Install wandb using https://docs.wandb.ai/quickstart
-* clone this repo
-* cd repo folder
-* ```pip3 install -r requirements.txt```
+* git clone https://github.com/yishayahu/AIVA.git
+* cd AIVA
+* pip3 install -r requirements.txt
+* cd ..
+* git clone https://github.com/deepmind/surface-distance.git
+* pip install surface-distance/
 
 ## Dataset
 

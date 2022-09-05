@@ -118,9 +118,9 @@ class MultiSiteMri(torch.utils.data.Dataset):
         For any image-level normalization, do it here
         '''
 
-        image_path = os.path.join(paths.MSM_DATA_PATH, data_path[0])
+        image_path = os.path.join(paths.msm_data_path, data_path[0])
 
-        label_path = os.path.join(paths.MSM_DATA_PATH, data_path[1])
+        label_path = os.path.join(paths.msm_data_path, data_path[1])
         itk_image = sitk.ReadImage(image_path)  # os.path.join(image_path, 'T1_unbiased_brain_rigid_to_mni.nii.gz'))
         itk_mask = sitk.ReadImage(label_path)  # os.path.join(image_path, 'T1_brain_seg_rigid_to_mni.nii.gz'))
 
