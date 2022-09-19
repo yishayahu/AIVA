@@ -4,7 +4,9 @@ import json
 import pickle
 import random
 import shutil
-
+import matplotlib
+import os
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -166,7 +168,7 @@ def train_pretrain(model, optimizer, scheduler, trainloader):
         model.train()
         loss_seg_value = 0
         optimizer.zero_grad()
-        adjust_learning_rate(optimizer, i_iter, config)
+        adjust_learning_rate(optimizer, i_iter, config, args)
 
         # train with source
         try:
@@ -243,7 +245,7 @@ def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val
     optimizer.zero_grad()
     for i_iter in tqdm(range(config.num_steps)):
         if config.use_adjust_lr:
-            adjust_learning_rate(optimizer, i_iter, config)
+            adjust_learning_rate(optimizer, i_iter, config, args)
         if i_iter == 0:
             if config.parallel_model:
                 model.module.get_bottleneck = False
@@ -382,55 +384,55 @@ def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val
         log_log = {}
 
         try:
-            batch = trainloader_iter.next()
+            train_batch = trainloader_iter.next()
         except StopIteration:
             trainloader_iter = iter(trainloader)
-            batch = trainloader_iter.next()
+            train_batch = trainloader_iter.next()
 
-        images, labels, ids, slice_nums = batch
-        images = Variable(images).to(args.gpu)
+        train_images, labels, train_ids, train_slice_nums = train_batch
+        train_images = Variable(train_images).to(args.gpu)
 
-        _, pred, features = model(images)
-        features = features.detach().cpu().numpy()
-        for id1, slc_num, feature, img in zip(ids, slice_nums, features, images):
-            slice_to_feature_source[f'{id1}_{slc_num}'] = feature
-            if best_matchs is not None and f'{id1}_{slc_num}' in slice_to_cluster:
-                src_cluster = slice_to_cluster[f'{id1}_{slc_num}']
+        _, pred, train_features = model(train_images)
+        train_features = train_features.detach().cpu().numpy()
+        for train_id1, train_slc_num, train_feature, train_img in zip(train_ids, train_slice_nums, train_features, train_images):
+            slice_to_feature_source[f'{train_id1}_{train_slc_num}'] = train_feature
+            if best_matchs is not None and f'{train_id1}_{train_slc_num}' in slice_to_cluster:
+                src_cluster = slice_to_cluster[f'{train_id1}_{train_slc_num}']
                 if f'source_{src_cluster}' not in vizviz or len(vizviz[f'source_{src_cluster}']) < 4:
                     if f'source_{src_cluster}' not in vizviz:
                         vizviz[f'source_{src_cluster}'] = []
                     vizviz[f'source_{src_cluster}'].append(None)
                     im_path = str(
                         config.exp_dir / f'source_{src_cluster}_{i_iter}_{len(vizviz[f"source_{src_cluster}"])}.png')
-                    if img.shape[0] == 3:
-                        plt.imsave(im_path, np.array(img[1].detach().cpu()), cmap='gray')
+                    if train_img.shape[0] == 3:
+                        plt.imsave(im_path, np.array(train_img[1].detach().cpu()), cmap='gray')
                     else:
-                        img = tensor_to_image(img)
-                        img.save(im_path)
+                        train_img = tensor_to_image(train_img)
+                        train_img.save(im_path)
                     log_log[f'{src_cluster}/source_{len(vizviz[f"source_{src_cluster}"])}'] = wandb.Image(im_path)
             loss_seg = loss_calc(pred, labels, args.gpu)
             loss = loss_seg
             # proper normalization
 
             try:
-                batch = targetloader_iter.next()
+                traget_batch = targetloader_iter.next()
             except StopIteration:
                 targetloader_iter = iter(targetloader)
-                batch = targetloader_iter.next()
-            images, labels, ids, slice_nums = batch
-            images = Variable(images).to(args.gpu)
+                traget_batch = targetloader_iter.next()
+            traget_images, _, ids, slice_nums = traget_batch
+            traget_images = Variable(traget_images).to(args.gpu)
 
-            _, __, features = model(images)
+            _, __, traget_features = model(traget_images)
             # features = features.mean(1)
             dist_loss = torch.tensor(0.0, device=args.gpu)
-            for id1, slc_num, feature, img in zip(ids, slice_nums, features, images):
-                slice_to_feature_target[f'{id1}_{slc_num}'] = feature.detach().cpu().numpy()
+            for id1, slc_num, traget_feature, traget_img in zip(ids, slice_nums, traget_features, traget_images):
+                slice_to_feature_target[f'{id1}_{slc_num}'] = traget_feature.detach().cpu().numpy()
                 if best_matchs is not None and f'{id1}_{slc_num}' in slice_to_cluster:
                     if config.use_accumulate_for_loss:
-                        accumulate_for_loss[slice_to_cluster[f'{id1}_{slc_num}']].append(feature)
+                        accumulate_for_loss[slice_to_cluster[f'{id1}_{slc_num}']].append(traget_feature)
                     else:
                         dist_loss += torch.mean(
-                            torch.abs(feature - best_matchs[slice_to_cluster[f'{id1}_{slc_num}']].to(args.gpu)))
+                            torch.abs(traget_feature - best_matchs[slice_to_cluster[f'{id1}_{slc_num}']].to(args.gpu)))
                     src_cluster = best_matchs_indexes[slice_to_cluster[f'{id1}_{slc_num}']]
                     if f'target_{src_cluster}' not in vizviz or len(vizviz[f'target_{src_cluster}']) < 4:
                         if f'target_{src_cluster}' not in vizviz:
@@ -438,11 +440,11 @@ def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val
                         vizviz[f'target_{src_cluster}'].append(None)
                         im_path = str(
                             config.exp_dir / f'target_{src_cluster}_{i_iter}_{len(vizviz[f"target_{src_cluster}"])}.png')
-                        if img.shape[0] == 3:
-                            plt.imsave(im_path, np.array(img[1].detach().cpu()), cmap='gray')
+                        if traget_img.shape[0] == 3:
+                            plt.imsave(im_path, np.array(traget_img[1].detach().cpu()), cmap='gray')
                         else:
-                            img = tensor_to_image(img)
-                            img.save(im_path)
+                            traget_img = tensor_to_image(traget_img)
+                            traget_img.save(im_path)
                         log_log[f'{src_cluster}/target_{len(vizviz[f"target_{src_cluster}"])}'] = wandb.Image(im_path)
             if accumulate_for_loss is not None:
                 use_dist_loss = False
@@ -452,12 +454,12 @@ def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val
                 if use_dist_loss:
                     total_amount = 0
                     dist_losses = [0] * len(accumulate_for_loss)
-                    for i, features in enumerate(accumulate_for_loss):
-                        if len(features) > 0:
-                            curr_amount = len(features)
+                    for i, accu_features in enumerate(accumulate_for_loss):
+                        if len(accu_features) > 0:
+                            curr_amount = len(accu_features)
                             total_amount += curr_amount
-                            features = torch.mean(torch.stack(features), dim=0)
-                            dist_losses[i] = torch.mean((features - best_matchs[i].to(args.gpu)) ** 2) * curr_amount
+                            accu_features = torch.mean(torch.stack(accu_features), dim=0)
+                            dist_losses[i] = torch.mean((accu_features - best_matchs[i].to(args.gpu)) ** 2) * curr_amount
                             accumulate_for_loss[i] = []
                     for l in dist_losses:
                         if l > 0:
@@ -475,12 +477,14 @@ def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val
             epoch_seg_loss.append(float(loss))
             losses_dict = {'seg_loss': loss, 'dist_loss': dist_loss, 'total': loss + dist_loss}
             if accumulate_for_loss is None:
+                print("Doing total loss!! (None)")
                 losses_dict['total'].backward()
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
             else:
                 if use_dist_loss:
+                    print("Doing total loss!!")
                     losses_dict['total'].backward()
                     optimizer.step()
                     scheduler.step()
@@ -488,6 +492,7 @@ def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val
                 elif best_matchs is None:
                     pass
                 else:
+                    print("Doing seg loss!!")
                     losses_dict['seg_loss'].backward(retain_graph=True)
                     scheduler.step()
             log_log['seg_loss'] = float(np.mean(epoch_seg_loss))
