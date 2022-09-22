@@ -477,22 +477,23 @@ def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val
             epoch_seg_loss.append(float(loss))
             losses_dict = {'seg_loss': loss, 'dist_loss': dist_loss, 'total': loss + dist_loss}
             if accumulate_for_loss is None:
-                print("Doing total loss!! (None)")
                 losses_dict['total'].backward()
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
+                pred.detach()
+                _, pred, _ = model(train_images)
             else:
                 if use_dist_loss:
-                    print("Doing total loss!!")
                     losses_dict['total'].backward()
                     optimizer.step()
                     scheduler.step()
                     optimizer.zero_grad()
+                    pred.detach()
+                    _, pred, _ = model(train_images)
                 elif best_matchs is None:
                     pass
                 else:
-                    print("Doing seg loss!!")
                     losses_dict['seg_loss'].backward(retain_graph=True)
                     scheduler.step()
             log_log['seg_loss'] = float(np.mean(epoch_seg_loss))
