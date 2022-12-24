@@ -10,12 +10,13 @@ from dpipe.im.shape_ops import crop_to_box
 from dpipe.im.shape_ops import zoom
 from dpipe.io import load
 from tqdm import tqdm
-
-from paths import *
+from pathlib import Path
 
 SPATIAL_DIMS = (-3, -2, -1)
 
-
+cc359_data_path = '/home/dsi/shaya/cc359_data/CC359/'
+cc359_splits_dir = '/home/dsi/shaya/unsup_splits/'
+cc359_results = Path('/home/dsi/shaya/tomer/CC359_results/')
 def extract_patch(inputs, x_patch_size, y_patch_size, spatial_dims=SPATIAL_DIMS):
     x, y, center = inputs
 
@@ -139,7 +140,7 @@ def create_pickle(site):
     voxel_spacing = (1, 0.95, 0.95)
     preprocessed_dataset = apply(Rescale3D(CC359(cc359_data_path), voxel_spacing), load_image=scale_mri)
     ds = apply(cache_methods(apply(preprocessed_dataset, load_image=np.float16)), load_image=np.float32)
-    base_path = cc359_splits_dir / f'site_{site}/'
+    base_path = cc359_splits_dir + f'/site_{site}/'
     all_dict = {}
     ids = load(base_path + 'train_ids.json') + load(base_path + 'val_ids.json') + load(base_path + 'test_ids.json')
     for id1 in tqdm(ids, desc=f'calculating data_len site  {site}'):
@@ -147,7 +148,7 @@ def create_pickle(site):
         seg = ds.load_segm(id1)
         all_dict[id1] = (img, seg)
 
-    pickle.dump(all_dict, open(base_path / 'all_img_segs.p', 'wb'))
+    pickle.dump(all_dict, open(base_path + '/all_img_segs.p', 'wb'))
 
 
 for s in [0, 1, 2, 3, 4, 5]:

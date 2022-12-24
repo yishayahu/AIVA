@@ -1,17 +1,11 @@
-import argparse
-import dataclasses
+
 import json
 import pickle
-import random
-import shutil
 import matplotlib
-import os
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.backends.cudnn as cudnn
-import torch.optim as optim
 import wandb
 from dpipe.io import load
 from scipy.optimize import linear_sum_assignment
@@ -19,109 +13,109 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from torch.autograd import Variable
-from torch.utils import data
 from tqdm import tqdm
-
-from configs import *
-from dataset.cc359_dataset import CC359Ds
-from dataset.msm_dataset import MultiSiteMri
 from metric_utils import get_sdice, get_dice
-from model.unet import UNet2D
-from utils import adjust_learning_rate, loss_calc
-from utils import freeze_model, include_patterns, tensor_to_image
+from utils import adjust_learning_rate, loss_calc, freeze_model, tensor_to_image
 
 
-def get_arguments():
-    """Parse all the arguments provided from the CLI.
-
-    Returns:
-      A list of parsed arguments.
-    """
-    parser = argparse.ArgumentParser(description="DeepLab-ResNet Network")
-
-    parser.add_argument("--num-workers", type=int, default=1,
-                        help="number of workers for multithread dataloading.")
-    # lr params
-    parser.add_argument("--momentum", type=float, default=0.9,
-                        help="Momentum component of the optimiser.")
-    parser.add_argument("--power", type=float, default=0.9,
-                        help="Decay parameter to compute the learning rate.")
-    parser.add_argument("--weight-decay", type=float, default=0.0005,
-                        help="Regularisation parameter for L2-loss.")
-
-    parser.add_argument("--random-seed", type=int, default=1234,
-                        help="Random seed to have reproducible results.")
-
-    parser.add_argument("--num-classes", type=int, default=2,
-                        help="Number of classes to predict (including background).")
-
-    parser.add_argument("--gpu", type=int, default=0,
-                        help="choose gpu device.")
-    parser.add_argument("--source", type=int, default=0)
-    parser.add_argument("--target", type=int, default=2)
-
-    parser.add_argument('--exp_name', default='')
-    parser.add_argument('--msm', action='store_true')
-    parser.add_argument("--mode", type=str, default='pretrain', help='pretrain or clustering_finetune')
-    return parser.parse_args()
-
-
-args = get_arguments()
-if args.msm:
-    args.source = args.target
-    if args.mode == 'clustering_finetune':
-        config = MsmConfigFinetuneClustering()
-    elif args.mode == 'pretrain':
-        config = MsmPretrainConfig()
-    else:
-        raise Exception(f'mode {args.mode} not exists')
-
-else:
-    if 'debug' in args.exp_name:
-        config = DebugConfigCC359()
-    elif args.mode == 'clustering_finetune':
-        config = CC359ConfigFinetuneClustering()
-    elif args.mode == 'pretrain':
-        config = CC359ConfigPretrain()
-    else:
-        raise Exception(f'mode {args.mode} not exists')
-if args.exp_name == '':
-    args.exp_name = args.mode
+# def get_arguments():
+#     """Parse all the arguments provided from the CLI.
+#
+#     Returns:
+#       A list of parsed arguments.
+#     """
+#     parser = argparse.ArgumentParser(description="DeepLab-ResNet Network")
+#
+#     parser.add_argument("--num-workers", type=int, default=1,
+#                         help="number of workers for multithread dataloading.")
+#     # lr params
+#     parser.add_argument("--momentum", type=float, default=0.9,
+#                         help="Momentum component of the optimiser.")
+#     parser.add_argument("--power", type=float, default=0.9,
+#                         help="Decay parameter to compute the learning rate.")
+#     parser.add_argument("--weight-decay", type=float, default=0.0005,
+#                         help="Regularisation parameter for L2-loss.")
+#
+#     parser.add_argument("--random-seed", type=int, default=1234,
+#                         help="Random seed to have reproducible results.")
+#
+#     parser.add_argument("--num-classes", type=int, default=2,
+#                         help="Number of classes to predict (including background).")
+#
+#     parser.add_argument("--gpu", type=int, default=0,
+#                         help="choose gpu device.")
+#     parser.add_argument("--source", type=int, default=0)
+#     parser.add_argument("--target", type=int, default=2)
+#
+#     parser.add_argument('--exp_name', default='')
+#     parser.add_argument('--msm', action='store_true')
+#     parser.add_argument("--mode", type=str, default='pretrain', help='pretrain or clustering_finetune')
+#
+#     parser.add_argument("--pp_epochs", type=int, default=1000)
+#     parser.add_argument("--target_model_path", type=str, default='')
+#     return parser.parse_args()
+#
+#
+# args = get_arguments()
+# if args.msm:
+#     args.source = args.target
+#     if args.mode == 'clustering_finetune':
+#         config = MsmConfigFinetuneClustering()
+#     elif args.mode == 'pretrain':
+#         config = MsmPretrainConfig()
+#     else:
+#         config = MsmConfigFinetuneClustering()
+#
+# else:
+#     if 'debug' in args.exp_name:
+#         config = DebugConfigCC359()
+#     elif args.mode == 'clustering_finetune':
+#         config = CC359ConfigFinetuneClustering()
+#     elif args.mode == 'pretrain':
+#         config = CC359ConfigPretrain()
+#     else:
+#         raise Exception(f'mode {args.mode} not exists')
+# if args.exp_name == '':
+#     args.exp_name = args.mode
 best_metric = -1
 low_source_metric = 1.1
 
 
-def after_step(num_step, val_ds, test_ds, model, val_ds_source):
+def after_step(num_step, val_ds, test_ds, model, val_ds_source, config, args):
     global best_metric
     global low_source_metric
-    if num_step % config.save_pred_every == 0 and num_step != 0:
-        if config.msm:
-            dice1, sdice1 = get_dice(model, val_ds, args.gpu, config)
-            main_metric = dice1
-        else:
-            dice1, sdice1 = get_sdice(model, val_ds, args.gpu, config)
-            main_metric = sdice1
-        if val_ds_source is not None:
+    if num_step % 500 == 0 and num_step != 0:
+        try:
             if config.msm:
-                dice_source, sdice_source = get_dice(model, val_ds_source, args.gpu, config)
-                main_metric_source = dice_source
+                dice1, sdice1 = get_dice(model, val_ds, args.gpu, config)
+                main_metric = dice1
             else:
-                dice_source, sdice_source = get_sdice(model, val_ds_source, args.gpu, config)
-                main_metric_source = sdice_source
-            if main_metric_source < low_source_metric:
-                low_source_metric = main_metric_source
-                torch.save(model.state_dict(), config.exp_dir / f'low_source_model.pth')
-            wandb.log({f'dice/val_source': dice_source, f'sdice/val_source': sdice_source}, step=num_step)
-        wandb.log({f'dice/val': dice1, f'sdice/val': sdice1}, step=num_step)
-        print(f'dice is ', dice1)
-        print(f'sdice is ', sdice1)
-        print('taking snapshot ...')
+                dice1, sdice1 = get_sdice(model, val_ds, args.gpu, config)
+                main_metric = sdice1
+            if val_ds_source is not None:
+                if config.msm:
+                    dice_source, sdice_source = get_dice(model, val_ds_source, args.gpu, config)
+                    main_metric_source = dice_source
+                else:
+                    dice_source, sdice_source = get_sdice(model, val_ds_source, args.gpu, config)
+                    main_metric_source = sdice_source
+                if main_metric_source < low_source_metric:
+                    low_source_metric = main_metric_source
+                    torch.save(model.state_dict(), config.exp_dir / f'low_source_model.pth')
+                wandb.log({f'dice/val_source': dice_source, f'sdice/val_source': sdice_source}, step=num_step)
+            wandb.log({f'dice/val': dice1, f'sdice/val': sdice1}, step=num_step)
+            print(f'dice is ', dice1)
+            print(f'sdice is ', sdice1)
+            print('taking snapshot ...')
 
-        if main_metric > best_metric:
-            best_metric = main_metric
-            torch.save(model.state_dict(), config.exp_dir / f'best_model.pth')
-
-        torch.save(model.state_dict(), config.exp_dir / f'model.pth')
+            if main_metric >= best_metric:
+                best_metric = main_metric
+                torch.save(model.state_dict(), config.exp_dir / f'best_model.pth')
+                print(f"saved best model to: {config.exp_dir / f'best_model.pth'}")
+            torch.save(model.state_dict(), config.exp_dir / f'model.pth')
+        except:
+            print("skipping to end dice")
+            num_step = config.num_steps - 1
     if num_step == config.num_steps - 1 or num_step == 0:
         title = 'end' if num_step != 0 else 'start'
         scores = {}
@@ -152,51 +146,6 @@ def after_step(num_step, val_ds, test_ds, model, val_ds_source):
         json.dump(scores, open(config.exp_dir / f'scores_{title}.json', 'w'))
 
 
-def train_pretrain(model, optimizer, scheduler, trainloader):
-    if config.msm:
-        val_ds = MultiSiteMri(load(f'{config.base_splits_path}/site_{args.source}t/val_ids.json'), yield_id=True,
-                              test=True)
-        test_ds = MultiSiteMri(load(f'{config.base_splits_path}/site_{args.source}t/test_ids.json'), yield_id=True,
-                               test=True)
-    else:
-        val_ds = CC359Ds(load(f'{config.base_splits_path}/site_{args.source}/val_ids.json'), site=args.source,
-                         yield_id=True, slicing_interval=1)
-        test_ds = CC359Ds(load(f'{config.base_splits_path}/site_{args.source}/test_ids.json'), site=args.source,
-                          yield_id=True, slicing_interval=1)
-    trainloader_iter = iter(trainloader)
-    for i_iter in range(config.num_steps):
-        model.train()
-        loss_seg_value = 0
-        optimizer.zero_grad()
-        adjust_learning_rate(optimizer, i_iter, config, args)
-
-        # train with source
-        try:
-            batch = trainloader_iter.next()
-        except StopIteration:
-            trainloader_iter = iter(trainloader)
-            batch = trainloader_iter.next()
-
-        images, labels = batch
-        images = Variable(images).to(args.gpu)
-
-        _, pred = model(images)
-        loss_seg = loss_calc(pred, labels, args.gpu)
-        loss = loss_seg
-        # proper normalization
-
-        loss.backward()
-        loss_seg_value += loss_seg.data.cpu().numpy()
-
-        optimizer.step()
-        scheduler.step()
-
-        print(
-            'iter = {0:8d}/{1:8d}, loss_seg1 = {2:.3f}'.format(
-                i_iter, config.num_steps, loss_seg_value))
-        after_step(i_iter, model=model, val_ds=val_ds, test_ds=test_ds, val_ds_source=None)
-
-
 def get_best_match_aux(distss):
     n_clusters = len(distss)
     print('n_clusterss', n_clusters)
@@ -217,7 +166,7 @@ def get_best_match(sc, tc):
     return best_match
 
 
-def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val_ds, test_ds, val_ds_source):
+def clustering(model, optimizer, scheduler, trainloader, targetloader, val_ds, test_ds, val_ds_source, config, args):
     freeze_model(model, exclude_layers=['init_path', 'down', 'bottleneck.0', 'bottleneck.1', 'bottleneck.2',
                                         'bottleneck.3.conv_path.0', 'out_path'])
     trainloader.dataset.yield_id = True
@@ -251,7 +200,7 @@ def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val
                 model.module.get_bottleneck = False
             else:
                 model.get_bottleneck = False
-            after_step(i_iter, val_ds, test_ds, model, val_ds_source)
+            after_step(i_iter, val_ds, test_ds, model, val_ds_source, config, args)
             continue
         if config.parallel_model:
             model.module.get_bottleneck = True
@@ -261,7 +210,7 @@ def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val
             model.eval()
         else:
             model.train()
-        if i_iter % config.epoch_every == 0 and i_iter != 0:
+        if i_iter % 500 == 0 and i_iter != 0:
             trainloader_iter = iter(trainloader)
             targetloader_iter = iter(targetloader)
             source_clusters = []
@@ -422,6 +371,7 @@ def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val
             traget_images, _, ids, slice_nums = traget_batch
             traget_images = Variable(traget_images).to(args.gpu)
 
+
             _, __, traget_features = model(traget_images)
             # features = features.mean(1)
             dist_loss = torch.tensor(0.0, device=args.gpu)
@@ -506,120 +456,4 @@ def train_clustering(model, optimizer, scheduler, trainloader, targetloader, val
             model.module.get_bottleneck = False
         else:
             model.get_bottleneck = False
-        after_step(i_iter, val_ds, test_ds, model, val_ds_source)
-
-
-def main():
-    """Create the model and start the training."""
-    cudnn.enabled = True
-    model = UNet2D(config.n_channels, n_chans_out=config.n_chans_out)
-
-    if args.mode != 'pretrain':
-        if args.exp_name != '':
-            config.exp_dir = Path(config.base_res_path) / f'source_{args.source}_target_{args.target}' / args.exp_name
-        else:
-            config.exp_dir = Path(config.base_res_path) / f'source_{args.source}_target_{args.target}' / args.mode
-
-        ckpt_path = Path(config.base_res_path) / f'source_{args.source}' / 'pretrain' / 'best_model.pth'
-        state_dict = torch.load(ckpt_path, map_location='cpu')
-        if config.msm:
-            new_state_dict = {}
-            for k, v in state_dict.items():
-                k = k.replace('module.', '')
-                new_state_dict[k] = v
-            state_dict = new_state_dict
-        model.load_state_dict(state_dict)
-        if config.msm:
-            optimizer = optim.Adam(model.parameters(),
-                                   lr=config.lr, weight_decay=args.weight_decay)
-        else:
-            optimizer = optim.SGD(model.parameters(),
-                                  lr=config.lr, momentum=args.momentum, weight_decay=args.weight_decay, nesterov=True)
-    else:
-        if args.exp_name != '':
-            config.exp_dir = Path(config.base_res_path) / f'source_{args.source}' / args.exp_name
-        else:
-            config.exp_dir = Path(config.base_res_path) / f'source_{args.source}' / args.mode
-
-        if config.msm:
-            optimizer = optim.Adam(model.parameters(),
-                                   lr=config.lr, weight_decay=args.weight_decay)
-        else:
-            optimizer = optim.SGD(model.parameters(),
-                                  lr=config.lr, momentum=args.momentum, weight_decay=args.weight_decay, nesterov=True)
-    if config.sched:
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=config.milestones,
-                                                         gamma=config.sched_gamma)
-    else:
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[], gamma=1)
-    if config.exp_dir.exists():
-        shutil.rmtree(config.exp_dir)
-    config.exp_dir.mkdir(parents=True, exist_ok=True)
-    json.dump(dataclasses.asdict(config), open(config.exp_dir / 'config.json', 'w'))
-    model.train()
-    if not torch.cuda.is_available():
-        print('training on cpu')
-        args.gpu = 'cpu'
-        config.parallel_model = False
-        torch.cuda.manual_seed_all(args.random_seed)
-
-    model.to(args.gpu)
-    if config.parallel_model:
-        model = torch.nn.DataParallel(model, device_ids=[0, 1, 2, 3])
-    random.seed(args.random_seed)
-    np.random.seed(args.random_seed)
-    torch.manual_seed(args.random_seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    if config.msm:
-        assert args.source == args.target
-        source_ds = MultiSiteMri(load(f'{config.base_splits_path}/site_{args.source}t/train_ids.json'))
-        target_ds = MultiSiteMri(load(f'{config.base_splits_path}/site_{args.target}/train_ids.json'))
-        val_ds = MultiSiteMri(load(f'{config.base_splits_path}/site_{args.target}/val_ids.json'), yield_id=True,
-                              test=True)
-        val_ds_source = MultiSiteMri(load(f'{config.base_splits_path}/site_{args.source}t/val_ids.json'), yield_id=True,
-                                     test=True)
-        test_ds = MultiSiteMri(load(f'{config.base_splits_path}/site_{args.target}/test_ids.json'), yield_id=True,
-                               test=True)
-        project = 'adaptSegUNetMsm'
-    else:
-        source_ds = CC359Ds(load(f'{config.base_splits_path}/site_{args.source}/train_ids.json')[:config.data_len],
-                            site=args.source)
-        target_ds = CC359Ds(load(f'{config.base_splits_path}/site_{args.target}/train_ids.json')[:config.data_len],
-                            site=args.target)
-        val_ds = CC359Ds(load(f'{config.base_splits_path}/site_{args.target}/test_ids.json'), site=args.target,
-                         yield_id=True, slicing_interval=1)
-        val_ds_source = CC359Ds(load(f'{config.base_splits_path}/site_{args.source}/val_ids.json'), site=args.source,
-                                yield_id=True, slicing_interval=1)
-        test_ds = CC359Ds(load(f'{config.base_splits_path}/site_{args.target}/test_ids.json'), site=args.target,
-                          yield_id=True, slicing_interval=1)
-        project = 'adaptSegUNet'
-    if config.debug:
-        wandb.init(
-            project='spot3',
-            id=wandb.util.generate_id(),
-            name=args.exp_name,
-            dir='../debug_wandb'
-        )
-    else:
-        wandb.init(
-            project=project,
-            id=wandb.util.generate_id(),
-            name=args.exp_name + '_' + str(args.source) + '_' + str(args.target),
-            dir='..'
-        )
-    trainloader = data.DataLoader(source_ds, batch_size=config.source_batch_size, shuffle=True,
-                                  num_workers=args.num_workers, pin_memory=True, drop_last=config.drop_last)
-    targetloader = data.DataLoader(target_ds, batch_size=config.target_batch_size, shuffle=True,
-                                   num_workers=args.num_workers, pin_memory=True, drop_last=config.drop_last)
-
-    optimizer.zero_grad()
-
-    if args.mode == 'pretrain':
-        train_pretrain(model, optimizer, scheduler, trainloader)
-    elif args.mode == 'clustering_finetune':
-        train_clustering(model, optimizer, scheduler, trainloader, targetloader, val_ds, test_ds, val_ds_source)
-
-
-if __name__ == '__main__':
-    main()
+        after_step(i_iter, val_ds, test_ds, model, val_ds_source, config, args)

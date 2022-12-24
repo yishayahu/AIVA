@@ -42,6 +42,17 @@ def freeze_norm_stats(model, exclude_layers=('inconv',)):
                 if l in name:
                     m.train()
 
+def load_model(model ,state_dict_path ,is_msm):
+    state_dict = torch.load(state_dict_path, map_location='cpu')
+    if is_msm:
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            k = k.replace('module.', '')
+            new_state_dict[k] = v
+        state_dict = new_state_dict
+    model.load_state_dict(state_dict)
+    return model
+
 
 class CrossEntropy2d(nn.Module):
 
@@ -122,3 +133,11 @@ def tensor_to_image(tensor):
     else:
         assert False
     return PIL.Image.fromarray(tensor)
+
+def get_batch(loader, loader_iter):
+    try:
+        batch = loader_iter.next()
+    except StopIteration:
+        loader_iter = iter(loader)
+        batch = loader_iter.next()
+    return batch
